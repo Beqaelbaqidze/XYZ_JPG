@@ -1,0 +1,26 @@
+{
+  "dependencies": {
+    "exceljs": "^4.3.0",
+    "exif-parser": "^0.1.12",
+    "express": "^4.18.2",
+    "fs": "^0.0.1-security",
+    "jsdom": "^22.1.0",
+    "path": "^0.12.7",
+    "shapefile": "^0.6.6",
+    "shp-write": "^0.3.2",
+    "typescript": "^5.2.2",
+    "xmlbuilder": "^15.1.1"
+  },
+  "name": "converter",
+  "version": "1.0.0",
+  "main": "readJPGFiles.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node readJPGFiles.js"
+  },
+  "type": "module",
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": ""
+}
