@@ -1,79 +1,98 @@
 import { readdir, readFile, writeFile } from "fs";
 import { extname, join } from "path";
 import { create } from "exif-parser";
+import proj4 from "proj4";
+import egm96 from "egm96-universal";
 
-
-const folderPath = "./Folder";
-const txtFilePath = "gps_data.txt";
-const tableData = [];
-
-readdir(folderPath, (err, files) => {
-  if (err) {
-    console.error("Error reading folder:", err);
-    return;
+export default class GpsDataProcessor {
+  constructor(folderPath, txtFilePath) {
+    this.folderPath = folderPath || "./Folder";
+    this.txtFilePath = txtFilePath || "gps_data.txt";
+    this.tableData = [];
   }
 
-  const jpegFiles = files.filter(
-    (file) => extname(file).toLowerCase() === ".jpg"
-  );
+  processGpsData() {
+    proj4.defs(
+      "EPSG:32638",
+      "+proj=utm +zone=38 +datum=WGS84 +units=m +no_defs"
+    );
 
-  jpegFiles.forEach((jpegFile) => {
-    const filePath = join(folderPath, jpegFile);
-
-    readFile(filePath, (err, data) => {
+    readdir(this.folderPath, (err, files) => {
       if (err) {
-        console.error("Error reading file:", err);
+        console.error("Error reading folder:", err);
         return;
       }
 
-      const parser = create(data);
-      const exifData = parser.parse();
-      function decimalToDMS(decimal) {
-        const degrees = Math.floor(decimal);
-        const minutesDecimal = (decimal - degrees) * 60;
-        const minutes = Math.floor(minutesDecimal);
-        const seconds = (minutesDecimal - minutes) * 60;
+      const jpegFiles = files.filter(
+        (file) => extname(file).toLowerCase() === ".jpg"
+      );
 
-        return `${degrees}°${minutes}'${seconds.toFixed(4)}"`;
-      }
+      jpegFiles.forEach((jpegFile) => {
+        const filePath = join(this.folderPath, jpegFile);
 
-      const latitude = exifData.tags.GPSLatitude;
-      const longitude = exifData.tags.GPSLongitude;
-      const latitudeDMS = decimalToDMS(latitude);
-      const longitudeDMS = decimalToDMS(longitude);
-      const latitudeDirection = latitude >= 0 ? "N" : "S";
-      const longitudeDirection = longitude >= 0 ? "E" : "W";
-      const formattedCoordinatesY = `${latitudeDMS}${latitudeDirection}`;
-      const formattedCoordinatesX = `${longitudeDMS}${longitudeDirection}`;
+        readFile(filePath, (err, data) => {
+          if (err) {
+            console.error("Error reading file:", err);
+            return;
+          }
 
-      tableData.push({
-        FileName: jpegFile,
-        Latitude: formattedCoordinatesY,
-        Longitude: formattedCoordinatesX,
-        Altitude: exifData.tags.GPSAltitude.toFixed(3),
+          const parser = create(data);
+          const exifData = parser.parse();
+
+          const latitude = exifData.tags.GPSLatitude;
+          const longitude = exifData.tags.GPSLongitude;
+
+          const utmCoords = proj4("EPSG:32638", [longitude, latitude]);
+
+          const geoidHeight = egm96.ellipsoidToEgm96(
+            utmCoords[0],
+            utmCoords[1],
+            exifData.tags.GPSAltitude
+          );
+
+          this.tableData.push({
+            FileName: jpegFile,
+            Latitude: utmCoords[1],
+            Longitude: utmCoords[0],
+            Altitude: exifData.tags.GPSAltitude.toFixed(3),
+            GeoidHeight: geoidHeight.toFixed(3),
+          });
+
+          if (this.tableData.length === jpegFiles.length) {
+            this.tableData.sort((a, b) => {
+              const fileNameA = a.FileName.toLowerCase();
+              const fileNameB = b.FileName.toLowerCase();
+              if (fileNameA < fileNameB) {
+                return -1;
+              } else if (fileNameA > fileNameB) {
+                return 1;
+              } else {
+                return 0;
+              }
+            });
+
+            this.generateTxtOutput();
+          }
+        });
       });
-
-      if (tableData.length === jpegFiles.length) {
-        generateTxtOutput(tableData);
-      }
     });
-  });
-});
+  }
 
-function generateTxtOutput(data) {
-  let txtContent = "";
+  generateTxtOutput() {
+    let txtContent = "";
 
-  txtContent += "FileName\tLongitude\tLatitude\tAltitude\n";
+    txtContent += "FileName\tLongitude\tLatitude\tAltitude\tGeoidHeight\n";
 
-  data.forEach((item) => {
-    txtContent += `${item.FileName}\t${item.Longitude}\t${item.Latitude}\t${item.Altitude}\n`;
-  });
+    this.tableData.forEach((item) => {
+      txtContent += `${item.FileName}\t${item.Longitude}\t${item.Latitude}\t${item.Altitude}\t${item.GeoidHeight}\n`;
+    });
 
-  writeFile(txtFilePath, txtContent, "utf-8", (err) => {
-    if (err) {
-      console.error("Error writing text file:", err);
-      return;
-    }
-    console.log("Text file has been written to gps_data.txt");
-  });
+    writeFile(this.txtFilePath, txtContent, "utf-8", (err) => {
+      if (err) {
+        console.error("Error writing text file:", err);
+        return;
+      }
+      console.log(`Text file has been written to ${this.txtFilePath}`);
+    });
+  }
 }
